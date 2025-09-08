@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aplikasi PMR</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#007bff">
+  <style>
+    :root { --primary:#007bff; --primary-dark:#0056b3; --danger:#dc3545; }
+    *{box-sizing:border-box}
+    body { font-family: Arial, sans-serif; margin: 0; background: #f4f6f9; color:#222;}
+    header { background: var(--primary); color: white; padding: 16px; text-align: center; }
+    nav { display: flex; gap:8px; padding:8px; background: var(--primary-dark); position:sticky; top:0; }
+    nav button { flex: 1; padding: 10px; background: #0e4f9a; color: white; border: none; cursor: pointer; border-radius:10px; }
+    nav button.active { background: #003d80; }
+    .page { display: none; padding: 16px; }
+    .card { background: white; padding: 16px; border-radius: 14px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); margin-bottom: 16px; }
+    input, select, button { padding: 10px; margin: 6px 0; width: 100%; border-radius: 10px; border: 1px solid #ccc; }
+    button.primary { background: var(--primary); color: white; border: none; }
+    button.primary:hover { filter: brightness(0.95); }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #e5e5e5; padding: 8px; text-align: center; }
+    th { background: #f3f3f3; }
+    #logoutBtn { background:var(--danger); color:white; border:none; padding:10px; border-radius:10px; cursor:pointer; width:auto;}
+    .topbar { display:flex; justify-content:flex-end; padding:8px 16px; }
+    .muted{color:#666; font-size:12px}
+  </style>
+</head>
+<body>
+<header>
+  <h1>Aplikasi PMR</h1>
+  <div class="muted">Mode offline-ready (PWA) • Admin password default: <b>pmr123</b></div>
+</header>
+
+<!-- LOGIN -->
+<div id="loginPage" class="page" style="display:block;">
+  <div class="card">
+    <h2>Login</h2>
+    <label>Pilih Role</label>
+    <select id="roleSelect" onchange="togglePassword()">
+      <option value="siswa">Siswa</option>
+      <option value="admin">Admin</option>
+    </select>
+    <div id="passwordBox" style="display:none;">
+      <input type="password" id="adminPass" placeholder="Password Admin (default: pmr123)" />
+    </div>
+    <button class="primary" onclick="login()">Masuk</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="mainPage" style="display:none;">
+  <nav>
+    <button onclick="showPage('absensi')" class="active">Absensi</button>
+    <button onclick="showPage('materi')">Materi</button>
+    <button onclick="showPage('raport')">Raport</button>
+  </nav>
+
+  <div class="topbar">
+    <button id="logoutBtn" onclick="logout()">Logout</button>
+  </div>
+
+  <!-- ABSENSI -->
+  <div id="absensi" class="page" style="display:block;">
+    <div class="card">
+      <h2>Form Absensi</h2>
+      <input type="text" id="nama" placeholder="Nama" />
+      <input type="text" id="kelas" placeholder="Kelas (mis. X-IPA-1)" />
+      <select id="status">
+        <option value="Hadir">Hadir</option>
+        <option value="Izin">Izin</option>
+        <option value="Sakit">Sakit</option>
+      </select>
+      <button class="primary" onclick="simpanAbsensi()">Simpan Absensi</button>
+    </div>
+
+    <div class="card">
+      <h2>Data Absensi</h2>
+      <button onclick="tampilkanData()">Tampilkan Data</button>
+      <button onclick="exportCSV()">Export CSV</button>
+      <table id="tabelAbsensi" style="display:none;">
+        <thead><tr><th>Nama</th><th>Kelas</th><th>Status</th><th>Waktu</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- MATERI -->
+  <div id="materi" class="page">
+    <div class="card adminOnly">
+      <h2>Upload Materi (Admin)</h2>
+      <input type="file" id="materiFile" />
+      <button class="primary" onclick="uploadFile('materiFile','materiPMR')">Upload Materi</button>
+      <div class="muted">Catatan: file disimpan lokal di perangkat ini (localStorage).</div>
+    </div>
+    <div class="card">
+      <h2>Daftar Materi</h2>
+      <ul id="materiList"></ul>
+    </div>
+  </div>
+
+  <!-- RAPORT -->
+  <div id="raport" class="page">
+    <div class="card adminOnly">
+      <h2>Upload Raport (Admin)</h2>
+      <input type="file" id="raportFile" />
+      <button class="primary" onclick="uploadFile('raportFile','raportPMR')">Upload Raport</button>
+      <div class="muted">Catatan: file disimpan lokal di perangkat ini (localStorage).</div>
+    </div>
+    <div class="card">
+      <h2>Daftar Raport</h2>
+      <ul id="raportList"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+// PWA register (relative path to support GitHub Pages subpaths)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+}
+
+// ===== Auth =====
+function togglePassword(){
+  const role=document.getElementById('roleSelect').value;
+  document.getElementById('passwordBox').style.display = role==='admin' ? 'block':'none';
+}
+function login(){
+  const role=document.getElementById('roleSelect').value;
+  if(role==='admin'){
+    const pass=document.getElementById('adminPass').value;
+    if(pass!=='pmr123'){ alert('Password salah!'); return; }
+  }
+  localStorage.setItem('rolePMR', role);
+  document.getElementById('loginPage').style.display='none';
+  document.getElementById('mainPage').style.display='block';
+  applyRole();
+  showFiles('materiPMR'); showFiles('raportPMR');
+}
+function logout(){
+  localStorage.removeItem('rolePMR');
+  location.reload();
+}
+function applyRole(){
+  const role=localStorage.getItem('rolePMR');
+  document.querySelectorAll('.adminOnly').forEach(el=>{
+    el.style.display = role==='admin' ? 'block' : 'none';
+  });
+}
+
+// ===== Tabs =====
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.style.display='none');
+  document.getElementById(id).style.display='block';
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.querySelector(`nav button[onclick="showPage('${id}')"]`).classList.add('active');
+}
+
+// ===== Absensi =====
+function simpanAbsensi(){
+  const nama=document.getElementById('nama').value.trim();
+  const kelas=document.getElementById('kelas').value.trim();
+  const status=document.getElementById('status').value;
+  const waktu=new Date().toLocaleString();
+  if(!nama || !kelas){ alert('Isi nama & kelas!'); return; }
+  const data = JSON.parse(localStorage.getItem('absensiPMR'))||[];
+  data.push({nama,kelas,status,waktu});
+  localStorage.setItem('absensiPMR', JSON.stringify(data));
+  alert('Absensi tersimpan!');
+  document.getElementById('nama').value='';
+  document.getElementById('kelas').value='';
+}
+function tampilkanData(){
+  const data = JSON.parse(localStorage.getItem('absensiPMR'))||[];
+  const tbody=document.querySelector('#tabelAbsensi tbody');
+  tbody.innerHTML='';
+  data.forEach(d=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML = `<td>${d.nama}</td><td>${d.kelas}</td><td>${d.status}</td><td>${d.waktu}</td>`;
+    tbody.appendChild(tr);
+  });
+  document.getElementById('tabelAbsensi').style.display='table';
+}
+function exportCSV(){
+  const data = JSON.parse(localStorage.getItem('absensiPMR'))||[];
+  if(!data.length){ alert('Belum ada data!'); return; }
+  let csv = 'Nama,Kelas,Status,Waktu\n';
+  data.forEach(d=>{ csv += `${d.nama},${d.kelas},${d.status},${d.waktu}\n`; });
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'absensi_pmr.csv';
+  a.click();
+}
+
+// ===== Files (Materi & Raport) =====
+function uploadFile(inputId, storageKey){
+  const inp=document.getElementById(inputId);
+  const f=inp.files[0];
+  if(!f){ alert('Pilih file dulu!'); return; }
+  const reader=new FileReader();
+  reader.onload = (e)=>{
+    const list = JSON.parse(localStorage.getItem(storageKey))||[];
+    list.push({name:f.name, content:e.target.result});
+    localStorage.setItem(storageKey, JSON.stringify(list));
+    alert('File berhasil diupload!');
+    showFiles(storageKey);
+    inp.value = '';
+  };
+  reader.readAsDataURL(f);
+}
+function showFiles(storageKey){
+  const list = JSON.parse(localStorage.getItem(storageKey))||[];
+  const ul = document.getElementById(storageKey==='materiPMR'?'materiList':'raportList');
+  ul.innerHTML='';
+  list.forEach((it, idx)=>{
+    const li=document.createElement('li');
+    const a=document.createElement('a');
+    a.href = it.content;
+    a.download = it.name;
+    a.textContent = it.name;
+    li.appendChild(a);
+    ul.appendChild(li);
+  });
+}
+
+// Auto-resume session
+window.onload = ()=>{
+  const role=localStorage.getItem('rolePMR');
+  if(role){
+    document.getElementById('loginPage').style.display='none';
+    document.getElementById('mainPage').style.display='block';
+    applyRole();
+    showFiles('materiPMR'); showFiles('raportPMR');
+  }
+};
+</script>
+</body>
+</html>
